@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Market Notes</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Sidebar -->
+      <aside id="sidebar">
+        <header class="brand">
+          <div class="brand-title">MARKET NOTES</div>
+          <div class="brand-sub">Research &amp; findings</div>
+        </header>
+
+        <div class="nav-scroll">
+          <div class="nav-label">Markets of interest</div>
+          <nav id="market-list"><!-- groups injected here --></nav>
+        </div>
+
+        <footer class="sidebar-foot">
+          <button id="add-market-btn" class="add-btn">
+            <span class="plus">+</span> Add market
+          </button>
+          <button id="refresh-btn" class="folder-btn" title="Fetch live prices from Yahoo Finance">
+            <span class="refresh-glyph">↻</span> Refresh prices
+            <span id="refresh-status" class="refresh-status"></span>
+          </button>
+          <button id="open-folder-btn" class="folder-btn" title="Open the folder where notes are saved">
+            Open notes folder
+          </button>
+        </footer>
+      </aside>
+
+      <!-- Main panel -->
+      <main id="main">
+        <!-- Empty state -->
+        <section id="empty-state" class="empty">
+          <div class="empty-inner">
+            <div class="empty-glyph">◔</div>
+            <h1>No market selected</h1>
+            <p>Add a market to the sidebar, then jot down your research and
+               notes on current events here.</p>
+            <div class="empty-actions">
+              <button id="empty-add-btn" class="primary">+ Add a market</button>
+              <button id="empty-sample-btn" class="ghost">Load sample commodities</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Editor -->
+        <section id="editor" class="editor hidden">
+          <header class="editor-head">
+            <div class="editor-head-left">
+              <h1 id="m-name" class="m-name">—</h1>
+              <div class="m-meta">
+                <span id="m-symbol" class="mono meta-symbol"></span>
+                <span id="m-category" class="meta-category"></span>
+                <span id="m-price" class="mono meta-price"></span>
+                <span id="m-changes" class="mono meta-changes"></span>
+                <span id="m-target" class="mono meta-target"></span>
+              </div>
+            </div>
+            <div class="editor-head-right">
+              <span id="m-saved" class="saved-label"></span>
+              <button id="edit-market-btn" class="icon-btn" title="Edit market details">Edit</button>
+              <button id="delete-market-btn" class="icon-btn danger" title="Delete this market">Delete</button>
+            </div>
+          </header>
+
+          <div class="editor-body">
+            <textarea id="notes" spellcheck="true"
+              placeholder="Start typing your notes — past research, key levels, current events…"></textarea>
+          </div>
+
+          <footer class="editor-foot">
+            <span id="foot-count" class="mono">0 words · 0 chars</span>
+            <span id="foot-total" class="mono">0 markets tracked</span>
+          </footer>
+        </section>
+      </main>
+    </div>
+
+    <!-- Add / edit market dialog -->
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h2 id="modal-title">Add market</h2>
+        <form id="market-form">
+          <label>
+            <span>Name</span>
+            <input id="f-name" type="text" placeholder="e.g. Crude Oil" required maxlength="80" />
+          </label>
+          <div class="field-row">
+            <label>
+              <span>Symbol</span>
+              <input id="f-symbol" type="text" placeholder="e.g. CL" maxlength="12" />
+            </label>
+            <label>
+              <span>Category</span>
+              <input id="f-category" type="text" placeholder="e.g. Energy" maxlength="40" list="category-suggestions" />
+              <datalist id="category-suggestions"></datalist>
+            </label>
+          </div>
+          <label>
+            <span>Yahoo symbol <em class="hint">— for live prices, e.g. CL=F, GC=F, AAPL. Defaults to Symbol.</em></span>
+            <input id="f-quote" type="text" placeholder="e.g. CL=F" maxlength="24" />
+          </label>
+          <label>
+            <span>Target price <em class="hint">— optional; alerts when the live price rises above it</em></span>
+            <input id="f-target" type="text" inputmode="decimal" placeholder="e.g. 4000" maxlength="20" />
+          </label>
+          <p class="modal-note">Price and day/week/month change are fetched live from Yahoo Finance — no need to enter them.</p>
+          <div class="modal-actions">
+            <button type="button" id="modal-cancel" class="ghost">Cancel</button>
+            <button type="submit" id="modal-save" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
