@@ -3,15 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Market Notes</title>
+    <title>PlayMarkets</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="app">
+    <!-- Login gate -->
+    <div id="login-screen" class="login-screen">
+      <form id="login-form" class="login-card">
+        <div class="login-brand">PLAYMARKETS</div>
+        <div class="login-sub">Sign in to continue</div>
+        <label>
+          <span>Username</span>
+          <input id="login-username" type="text" autocomplete="username"
+                 autofocus required />
+        </label>
+        <label>
+          <span>Password</span>
+          <input id="login-password" type="password" autocomplete="current-password" required />
+        </label>
+        <div id="login-error" class="login-error"></div>
+        <button type="submit" class="primary login-btn">Log in</button>
+      </form>
+    </div>
+
+    <div id="app" class="hidden">
       <!-- Sidebar -->
       <aside id="sidebar">
         <header class="brand">
-          <div class="brand-title">MARKET NOTES</div>
+          <div class="brand-title">PLAYMARKETS</div>
           <div class="brand-sub">Research &amp; findings</div>
         </header>
 
@@ -27,9 +46,6 @@
           <button id="refresh-btn" class="folder-btn" title="Fetch live prices from Yahoo Finance">
             <span class="refresh-glyph">↻</span> Refresh prices
             <span id="refresh-status" class="refresh-status"></span>
-          </button>
-          <button id="open-folder-btn" class="folder-btn" title="Open the folder where notes are saved">
-            Open notes folder
           </button>
         </footer>
       </aside>

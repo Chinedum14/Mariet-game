@@ -1,4 +1,4 @@
-# Market Notes
+# PlayMarkets
 
 A small desktop app for tracking markets and keeping research notes on each one.
 Markets live in the left sidebar (grouped by category); each one gets its own

@@ -1,0 +1,3 @@
+Implement google auth.
+Implement cloud storage of app data.
+Build a mobile app equivalent

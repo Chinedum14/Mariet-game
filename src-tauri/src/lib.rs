@@ -1,4 +1,4 @@
-// Market Notes — Tauri backend. (live quotes via Yahoo Finance; day/week/month)
+// PlayMarkets — Tauri backend. (live quotes via Yahoo Finance; day/week/month)
 // Each market is stored as one plain Markdown file on disk with a small
 // YAML-style frontmatter block for its metadata, followed by the notes body.
 //
@@ -13,6 +13,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -406,6 +407,30 @@ async fn fetch_quotes(requests: Vec<QuoteReq>) -> Result<Vec<Quote>, String> {
     Ok(out)
 }
 
+// ---------- Login gate ----------
+// Note: these credentials live in the binary, so this is a light access gate,
+// not strong security. Anyone with the files could recover them.
+const LOGIN_USERNAME: &str = "Varol";
+const LOGIN_PASSWORD: &str = "ResearchAndPlay";
+
+// Auth lives in the running process, so it survives webview reloads but resets
+// when the app is actually re-launched (a fresh process starts at `false`).
+struct AuthState(Mutex<bool>);
+
+#[tauri::command]
+fn login(state: tauri::State<AuthState>, username: String, password: String) -> bool {
+    let ok = username == LOGIN_USERNAME && password == LOGIN_PASSWORD;
+    if ok {
+        *state.0.lock().unwrap() = true;
+    }
+    ok
+}
+
+#[tauri::command]
+fn is_authenticated(state: tauri::State<AuthState>) -> bool {
+    *state.0.lock().unwrap()
+}
+
 // ---------- Desktop notifications ----------
 
 #[tauri::command]
@@ -424,6 +449,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .manage(AuthState(Mutex::new(false)))
         .invoke_handler(tauri::generate_handler![
             get_data_dir,
             list_markets,
@@ -432,7 +458,9 @@ pub fn run() {
             delete_market,
             reveal_data_dir,
             fetch_quotes,
-            notify
+            notify,
+            login,
+            is_authenticated
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

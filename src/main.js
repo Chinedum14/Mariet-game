@@ -1,13 +1,18 @@
-// Market Notes — frontend logic.
-// Talks to the Rust backend through Tauri's global `invoke`.
+// PlayMarkets — frontend logic.
+// Data lives in Firestore (shared with the mobile app). Live quotes,
+// notifications, and the login gate still go through the Rust backend.
 
 const invoke = window.__TAURI__?.core?.invoke;
 
 // ---------- State ----------
-let markets = [];        // all markets, as returned by the backend
+let markets = [];        // all markets, from the Firestore subscription
 let currentId = null;    // id of the market shown in the editor
 let editingId = null;    // id being edited in the modal (null = adding new)
 let saveTimer = null;    // debounce handle for autosave
+let fb = null;           // firebase data module (loaded after login)
+let unsub = null;        // Firestore unsubscribe fn
+let firstSnapshot = true;
+let pendingSelectId = null; // select this market once it arrives in a snapshot
 
 // ---------- Element handles ----------
 const $ = (id) => document.getElementById(id);
@@ -85,7 +90,6 @@ function countWords(text) {
 
 // ---------- Sidebar ----------
 function renderSidebar() {
-  // Group by category (blank -> "Other"), categories sorted alphabetically.
   const groups = {};
   for (const m of markets) {
     const key = (m.category || "Other").trim() || "Other";
@@ -95,7 +99,7 @@ function renderSidebar() {
 
   els.list.innerHTML = "";
   for (const cat of catNames) {
-    const rows = groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+    const rows = groups[cat].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
     const group = document.createElement("div");
     group.className = "group";
@@ -130,7 +134,6 @@ function renderSidebar() {
   els.footTotal.textContent =
     `${markets.length} market${markets.length === 1 ? "" : "s"} tracked`;
 
-  // Refresh category autocomplete suggestions.
   els.catSuggestions.innerHTML = catNames
     .filter((c) => c !== "Other")
     .map((c) => `<option value="${escapeHtml(c)}"></option>`)
@@ -145,8 +148,7 @@ function showEmpty() {
 }
 
 function selectMarket(id) {
-  // Flush any pending save for the market we're leaving.
-  flushSave();
+  flushSave(); // flush pending save for the market we're leaving
 
   const m = markets.find((x) => x.id === id);
   if (!m) return showEmpty();
@@ -165,7 +167,7 @@ function selectMarket(id) {
   els.notes.focus();
 }
 
-// Renders the symbol/category/price/changes line in the editor header.
+// Renders the symbol/category/price/changes/target line in the editor header.
 function renderMeta(m) {
   els.symbol.textContent = m.symbol || "";
   els.category.textContent = m.category || "";
@@ -209,16 +211,14 @@ function scheduleSave() {
 async function flushSave() {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
   const m = markets.find((x) => x.id === currentId);
-  if (!m) return;
+  if (!m || !fb) return;
   if (m.body === els.notes.value) return; // nothing changed
 
   m.body = els.notes.value;
   try {
-    const saved = await invoke("save_market", { market: m });
-    Object.assign(m, saved);
-    if (currentId === m.id) {
-      els.saved.textContent = "Saved " + fmtDate(m.modifiedMs || Date.now());
-    }
+    await fb.saveMarket(m);
+    m.modifiedMs = Date.now();
+    if (currentId === m.id) els.saved.textContent = "Saved " + fmtDate(m.modifiedMs);
   } catch (e) {
     console.error("save failed", e);
     els.saved.textContent = "⚠ Save failed";
@@ -247,7 +247,7 @@ function closeModal() {
 async function handleSubmit(e) {
   e.preventDefault();
   const name = els.fName.value.trim();
-  if (!name) return;
+  if (!name || !fb) return;
 
   const fields = {
     name,
@@ -259,27 +259,14 @@ async function handleSubmit(e) {
 
   try {
     if (editingId) {
-      // Update an existing market, preserving its notes body and live prices.
       const m = markets.find((x) => x.id === editingId);
-      const updated = { ...m, ...fields };
-      const saved = await invoke("save_market", { market: updated });
-      Object.assign(m, saved);
+      await fb.saveMarket({ ...m, ...fields });
       closeModal();
-      renderSidebar();
-      if (currentId === m.id) selectMarket(m.id);
       refreshQuotes(); // symbol may have changed — pull fresh prices
     } else {
-      let created = await invoke("create_market", {
-        name: fields.name, symbol: fields.symbol, category: fields.category,
-      });
-      if (fields.quote || fields.target) {
-        created = await invoke("save_market", {
-          market: { ...created, quote: fields.quote, target: fields.target },
-        });
-      }
-      markets.push(created);
+      const created = await fb.createMarket(fields);
+      pendingSelectId = created.id; // select once the snapshot arrives
       closeModal();
-      selectMarket(created.id);
       refreshQuotes(); // fetch live price for the new market
     }
   } catch (err) {
@@ -290,13 +277,11 @@ async function handleSubmit(e) {
 
 async function deleteCurrent() {
   const m = markets.find((x) => x.id === currentId);
-  if (!m) return;
-  if (!confirm(`Delete "${m.name}" and its notes? This removes the .md file from disk.`)) return;
+  if (!m || !fb) return;
+  if (!confirm(`Delete "${m.name}" and its notes from the cloud? This affects all devices.`)) return;
   try {
-    await invoke("delete_market", { id: m.id });
-    markets = markets.filter((x) => x.id !== m.id);
-    renderSidebar();
-    showEmpty();
+    await fb.deleteMarket(m.id);
+    showEmpty(); // snapshot will also drop it
   } catch (err) {
     alert("Could not delete market:\n" + err);
   }
@@ -319,29 +304,28 @@ const SAMPLES = [
 ];
 
 async function loadSamples() {
+  if (!fb) return;
   try {
+    let firstId = null;
     for (const s of SAMPLES) {
-      const created = await invoke("create_market", {
-        name: s.name, symbol: s.symbol, category: s.category,
+      const created = await fb.createMarket({
+        name: s.name, symbol: s.symbol, quote: s.quote, category: s.category,
       });
-      const saved = await invoke("save_market", {
-        market: { ...created, quote: s.quote, body: s.body },
-      });
-      markets.push(saved);
+      await fb.saveMarket({ ...created, body: s.body });
+      if (!firstId) firstId = created.id;
     }
-    renderSidebar();
-    selectMarket(markets[0].id);
-    refreshQuotes(); // pull live prices right away
+    pendingSelectId = firstId;
+    refreshQuotes();
   } catch (err) {
     alert("Could not load sample data:\n" + err);
   }
 }
 
-// ---------- Live quotes ----------
+// ---------- Live quotes (Yahoo via Rust, persisted to Firestore) ----------
 let refreshing = false;
 
 async function refreshQuotes() {
-  if (refreshing) return;
+  if (refreshing || !fb) return;
   const requests = markets
     .map((m) => ({ id: m.id, symbol: (m.quote || m.symbol || "").trim() }))
     .filter((r) => r.symbol);
@@ -356,20 +340,20 @@ async function refreshQuotes() {
 
   try {
     const quotes = await invoke("fetch_quotes", { requests });
-    let ok = 0, failed = 0;
+    let failed = 0;
     for (const q of quotes) {
       const m = markets.find((x) => x.id === q.id);
       if (!m) continue;
       if (q.error || q.price == null) { failed++; continue; }
-      m.price = String(q.price);
-      m.changeDay = q.changeDay != null ? String(q.changeDay) : "";
-      m.changeWeek = q.changeWeek != null ? String(q.changeWeek) : "";
-      m.changeMonth = q.changeMonth != null ? String(q.changeMonth) : "";
-      await invoke("save_market", { market: m });
-      if (m.id === currentId) renderMeta(m);
-      ok++;
+      const updated = {
+        ...m,
+        price: String(q.price),
+        changeDay: q.changeDay != null ? String(q.changeDay) : "",
+        changeWeek: q.changeWeek != null ? String(q.changeWeek) : "",
+        changeMonth: q.changeMonth != null ? String(q.changeMonth) : "",
+      };
+      await fb.saveMarket(updated);
     }
-    renderSidebar();
     els.refreshStatus.textContent =
       `· ${fmtTime(Date.now())}` + (failed ? ` (${failed} failed)` : "");
   } catch (err) {
@@ -386,8 +370,6 @@ function fmtTime(ms) {
 }
 
 // ---------- Target-price alerts ----------
-// Sends one desktop notification summarising every market currently above its
-// target. Called on launch and every 4 hours (see init).
 async function checkTargetsAndNotify() {
   const hits = markets.filter(aboveTarget);
   if (!hits.length) return;
@@ -406,22 +388,52 @@ async function checkTargetsAndNotify() {
   }
 }
 
-// ---------- Init ----------
-async function loadMarkets() {
-  markets = await invoke("list_markets");
+// ---------- Firestore subscription ----------
+function onMarketsSnapshot(list) {
+  markets = list;
+
+  // Select a just-created market once it appears.
+  if (pendingSelectId && markets.find((m) => m.id === pendingSelectId)) {
+    const id = pendingSelectId;
+    pendingSelectId = null;
+    firstSnapshot = false;
+    selectMarket(id);
+    return;
+  }
+
   renderSidebar();
-  if (markets.length) {
-    // Select the most recently modified market.
-    const latest = [...markets].sort(
-      (a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0))[0];
-    selectMarket(latest.id);
-    await refreshQuotes(); // pull live prices on launch
-    checkTargetsAndNotify(); // alert about anything already above target
-  } else {
-    showEmpty();
+
+  // Keep the open editor in sync with remote changes (prices, or edits from the
+  // phone), without clobbering notes the user is actively typing.
+  if (currentId) {
+    const m = markets.find((x) => x.id === currentId);
+    if (!m) {
+      showEmpty();
+    } else {
+      els.name.textContent = m.name;
+      renderMeta(m);
+      els.saved.textContent = m.modifiedMs ? "Saved " + fmtDate(m.modifiedMs) : "";
+      if (document.activeElement !== els.notes) {
+        els.notes.value = m.body || "";
+        updateCounts();
+      }
+    }
+  }
+
+  if (firstSnapshot) {
+    firstSnapshot = false;
+    if (markets.length) {
+      const latest = [...markets].sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0))[0];
+      selectMarket(latest.id);
+      refreshQuotes();       // pull live prices on launch
+      checkTargetsAndNotify();
+    } else {
+      showEmpty();
+    }
   }
 }
 
+// ---------- Init ----------
 function wireEvents() {
   els.list.addEventListener("click", (e) => {
     const row = e.target.closest(".market-row");
@@ -441,8 +453,6 @@ function wireEvents() {
   });
   $("delete-market-btn").addEventListener("click", deleteCurrent);
   els.refreshBtn.addEventListener("click", refreshQuotes);
-  $("open-folder-btn").addEventListener("click", () =>
-    invoke("reveal_data_dir").catch((e) => alert("Could not open folder:\n" + e)));
 
   els.form.addEventListener("submit", handleSubmit);
   $("modal-cancel").addEventListener("click", closeModal);
@@ -454,7 +464,64 @@ function wireEvents() {
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+// Reveals the app and boots it — only called after a successful login.
+async function startApp() {
+  $("login-screen").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  wireEvents();
+
+  els.refreshStatus.textContent = "· connecting…";
+  try {
+    fb = await import("./firebase.js"); // load Firebase only after login
+    await fb.signInShared();
+  } catch (e) {
+    console.error(e);
+    els.refreshStatus.textContent = "· offline";
+    alert("Could not connect to the cloud:\n" + (e?.message || e));
+    return;
+  }
+
+  unsub = fb.subscribeMarkets(onMarketsSnapshot);
+
+  setInterval(refreshQuotes, 30 * 60 * 1000);          // live prices every 30 min
+  setInterval(checkTargetsAndNotify, 4 * 60 * 60 * 1000); // target alerts every 4 h
+}
+
+function wireLogin() {
+  const form = $("login-form");
+  const err = $("login-error");
+  const uname = $("login-username");
+  const pass = $("login-password");
+  const btn = form.querySelector("button[type=submit]");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    err.textContent = "";
+    btn.disabled = true;
+    try {
+      const ok = await invoke("login", {
+        username: uname.value.trim(),
+        password: pass.value,
+      });
+      if (ok) {
+        startApp();
+      } else {
+        err.textContent = "Incorrect username or password.";
+        pass.value = "";
+        pass.focus();
+      }
+    } catch (e2) {
+      console.error(e2);
+      err.textContent = "Login failed: " + e2;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  uname.focus();
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
   if (!invoke) {
     document.body.innerHTML =
       '<div style="padding:40px;color:#e5534b;font-family:sans-serif">' +
@@ -462,17 +529,13 @@ window.addEventListener("DOMContentLoaded", () => {
       "(the Tauri desktop runtime), not opened directly in a browser.</div>";
     return;
   }
-  wireEvents();
-  loadMarkets().catch((e) => {
+  try {
+    if (await invoke("is_authenticated")) {
+      startApp();
+      return;
+    }
+  } catch (e) {
     console.error(e);
-    alert("Failed to load markets:\n" + e);
-  });
-
-  // Auto-refresh live prices every 30 minutes.
-  const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
-  setInterval(refreshQuotes, REFRESH_INTERVAL_MS);
-
-  // Notify about markets above their target price every 4 hours.
-  const NOTIFY_INTERVAL_MS = 4 * 60 * 60 * 1000;
-  setInterval(checkTargetsAndNotify, NOTIFY_INTERVAL_MS);
+  }
+  wireLogin();
 });
