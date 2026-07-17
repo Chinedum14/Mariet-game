@@ -2,6 +2,8 @@
 // Data lives in Firestore (shared with the mobile app). Live quotes,
 // notifications, and the login gate still go through the Rust backend.
 
+import { buildMapView } from "./mapview.js";
+
 const invoke = window.__TAURI__?.core?.invoke;
 
 // ---------- State ----------
@@ -13,6 +15,7 @@ let fb = null;           // firebase data module (loaded after login)
 let unsub = null;        // Firestore unsubscribe fn
 let firstSnapshot = true;
 let pendingSelectId = null; // select this market once it arrives in a snapshot
+let mapOpen = false;     // true when the editor is showing the supplier map
 
 // ---------- Element handles ----------
 const $ = (id) => document.getElementById(id);
@@ -28,6 +31,8 @@ const els = {
   target: $("m-target"),
   saved: $("m-saved"),
   notes: $("notes"),
+  mapPanel: $("map-panel"),
+  mapBtn: $("map-market-btn"),
   footCount: $("foot-count"),
   footTotal: $("foot-total"),
   backdrop: $("modal-backdrop"),
@@ -143,6 +148,7 @@ function renderSidebar() {
 // ---------- Editor ----------
 function showEmpty() {
   currentId = null;
+  setMapMode(false);
   els.editor.classList.add("hidden");
   els.empty.classList.remove("hidden");
 }
@@ -163,8 +169,34 @@ function selectMarket(id) {
   els.notes.value = m.body || "";
   updateCounts();
 
+  setMapMode(false); // always land on the notes editor when switching markets
   renderSidebar();
   els.notes.focus();
+}
+
+// ---------- Supplier map ----------
+// Swaps the notes textarea for a world map of the commodity's top suppliers.
+function setMapMode(on) {
+  mapOpen = on;
+  els.notes.classList.toggle("hidden", on);
+  els.mapPanel.classList.toggle("hidden", !on);
+  els.mapBtn.classList.toggle("active", on);
+  els.mapBtn.textContent = on ? "Notes" : "Map";
+  els.mapBtn.title = on ? "Back to notes" : "Show world map of top suppliers";
+
+  if (on) {
+    flushSave(); // persist any pending edits before hiding the textarea
+    const m = markets.find((x) => x.id === currentId);
+    els.mapPanel.replaceChildren();
+    if (m) els.mapPanel.appendChild(buildMapView(m).node);
+  } else {
+    els.mapPanel.replaceChildren();
+  }
+}
+
+function toggleMapMode() {
+  if (!currentId) return;
+  setMapMode(!mapOpen);
 }
 
 // Renders the symbol/category/price/changes/target line in the editor header.
@@ -447,6 +479,7 @@ function wireEvents() {
   $("add-market-btn").addEventListener("click", () => openModal("add"));
   $("empty-add-btn").addEventListener("click", () => openModal("add"));
   $("empty-sample-btn").addEventListener("click", loadSamples);
+  els.mapBtn.addEventListener("click", toggleMapMode);
   $("edit-market-btn").addEventListener("click", () => {
     const m = markets.find((x) => x.id === currentId);
     if (m) openModal("edit", m);
