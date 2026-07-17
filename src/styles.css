@@ -340,6 +340,131 @@ body {
   color: var(--text-muted);
 }
 
+/* Map button toggled-on state */
+.icon-btn.active {
+  background: rgba(216, 163, 74, 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Supplier world map ---------- */
+.map-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mapview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.map-head { padding: 18px 34px 12px; }
+.map-title { font-size: 15px; color: var(--text); letter-spacing: 0.2px; }
+.map-title strong { color: var(--accent); font-weight: 600; }
+.map-subtitle { margin-top: 3px; font-size: 12px; color: var(--text-muted); }
+
+.map-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 18px;
+  padding: 4px 24px 18px 34px;
+}
+
+.map-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(120% 120% at 50% 0%, #121218 0%, #0c0c0f 70%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.world-svg { width: 100%; height: 100%; display: block; }
+
+/* Base landmass */
+.map-land path {
+  fill: #23232b;
+  stroke: #0e0e10;
+  stroke-width: 0.4;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Highlighted supplier countries */
+.map-suppliers .supplier-shape {
+  fill: var(--accent);
+  stroke: #f0c877;
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px rgba(216, 163, 74, 0.55));
+  transition: fill 0.15s ease;
+}
+.map-suppliers .supplier-dot { stroke-width: 1; }
+.map-suppliers .supplier-shape.focus { fill: #f4c874; }
+
+/* Rank badges */
+.map-badges .badge-bg {
+  fill: #14100a;
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.map-badges .badge-num {
+  fill: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.map-badges .badge.focus .badge-bg { fill: var(--accent); }
+.map-badges .badge.focus .badge-num { fill: #14100a; }
+
+/* Legend */
+.map-legend {
+  width: 210px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px 4px 4px 0;
+  list-style: none;
+  overflow-y: auto;
+  counter-reset: none;
+}
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: default;
+}
+.map-legend li:hover, .map-legend li.focus { background: #16161a; }
+.legend-rank {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(216, 163, 74, 0.14);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.legend-name { color: var(--text-dim); font-size: 13px; }
+.map-legend li.focus .legend-name { color: var(--text); }
+
+/* Empty map state (non-commodity market) */
+.mapview-empty { align-items: center; justify-content: center; }
+.map-empty-inner { text-align: center; max-width: 420px; padding: 40px; }
+.map-empty-glyph { font-size: 42px; color: var(--text-faint); margin-bottom: 10px; }
+.map-empty-inner h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; color: var(--text); }
+.map-empty-inner p { color: var(--text-muted); line-height: 1.6; margin: 0; }
+
 /* ---------- Modal ---------- */
 .modal-backdrop {
   position: fixed;
