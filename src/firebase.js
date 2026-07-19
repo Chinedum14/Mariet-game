@@ -16,22 +16,38 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const COL = "markets";
 
+const NET_RETRIES = 4;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isNetErr = (e) => (e?.code || "") === "auth/network-request-failed";
+
 // Signs into the shared account so desktop + mobile share one dataset.
+// Retries on auth/network-request-failed — on a fresh app launch the webview's
+// network stack can be slow/not-ready, so the first attempt often flakes out.
 export async function signInShared() {
   const { email, password } = syncAccount;
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-  } catch (e) {
-    const code = e?.code || "";
-    if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
-      try {
-        await createUserWithEmailAndPassword(auth, email, password);
-      } catch (e2) {
-        if (e2?.code === "auth/email-already-in-use") {
-          await signInWithEmailAndPassword(auth, email, password);
-        } else throw e2;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      return;
+    } catch (e) {
+      const code = e?.code || "";
+      // First ever run: the shared account may not exist yet — create it.
+      if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+        try {
+          await createUserWithEmailAndPassword(auth, email, password);
+          return;
+        } catch (e2) {
+          if (e2?.code === "auth/email-already-in-use") {
+            await signInWithEmailAndPassword(auth, email, password);
+            return;
+          }
+          if (isNetErr(e2) && attempt < NET_RETRIES) { await sleep(600 * 2 ** attempt); continue; }
+          throw e2;
+        }
       }
-    } else throw e;
+      if (isNetErr(e) && attempt < NET_RETRIES) { await sleep(600 * 2 ** attempt); continue; }
+      throw e;
+    }
   }
 }
 
