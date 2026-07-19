@@ -271,6 +271,8 @@ struct Quote {
     change_week: Option<f64>,
     #[serde(rename = "changeMonth")]
     change_month: Option<f64>,
+    #[serde(rename = "change3d")]
+    change_3d: Option<f64>, // rise over the last 3 trading days (for momentum alerts)
     error: Option<String>,
 }
 
@@ -279,6 +281,7 @@ struct QuoteData {
     day: Option<f64>,
     week: Option<f64>,
     month: Option<f64>,
+    three_day: Option<f64>,
 }
 
 const YAHOO_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
@@ -310,6 +313,20 @@ fn close_days_back(points: &[(i64, f64)], last_ts: i64, days: i64) -> Option<f64
     best.or_else(|| points.first().map(|&(_, c)| c))
 }
 
+/// Close `n` trading sessions before the latest session. `points` is ascending
+/// by timestamp and each entry is one trading day, so this counts trading days
+/// (not calendar days). Falls back to the earliest close when history is short.
+fn close_trading_days_back(points: &[(i64, f64)], n: usize) -> Option<f64> {
+    if points.is_empty() {
+        return None;
+    }
+    if points.len() > n {
+        Some(points[points.len() - 1 - n].1)
+    } else {
+        points.first().map(|&(_, c)| c)
+    }
+}
+
 async fn fetch_one(client: &reqwest::Client, req: QuoteReq) -> Quote {
     let sym = req.symbol.trim();
     if sym.is_empty() {
@@ -319,6 +336,7 @@ async fn fetch_one(client: &reqwest::Client, req: QuoteReq) -> Quote {
             change_day: None,
             change_week: None,
             change_month: None,
+            change_3d: None,
             error: Some("no symbol".into()),
         };
     }
@@ -335,6 +353,7 @@ async fn fetch_one(client: &reqwest::Client, req: QuoteReq) -> Quote {
             change_day: d.day,
             change_week: d.week,
             change_month: d.month,
+            change_3d: d.three_day,
             error: None,
         },
         Err(e) => Quote {
@@ -343,6 +362,7 @@ async fn fetch_one(client: &reqwest::Client, req: QuoteReq) -> Quote {
             change_day: None,
             change_week: None,
             change_month: None,
+            change_3d: None,
             error: Some(e),
         },
     }
@@ -386,11 +406,15 @@ async fn do_fetch(client: &reqwest::Client, url: &str) -> Result<QuoteData, Stri
         None => (None, None, None),
     };
 
+    // 3-trading-day rise: live price vs the close 3 sessions ago.
+    let three_day = close_trading_days_back(&points, 3).and_then(|r| pct_change(price, r));
+
     Ok(QuoteData {
         price: round2(price),
         day,
         week,
         month,
+        three_day,
     })
 }
 

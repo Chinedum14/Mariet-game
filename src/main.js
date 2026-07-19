@@ -121,6 +121,9 @@ function renderSidebar() {
 
       const ticker = [];
       if (m.symbol) ticker.push(`<span>${escapeHtml(m.symbol)}</span>`);
+      if (hasMomentum(m)) {
+        ticker.push(`<span class="momentum-marker" title="Rising fast">●</span>`);
+      }
       ticker.push(`<span class="${ci.cls}">${ci.arrow}</span>`);
       if (ci.pct) ticker.push(`<span class="${ci.cls}">${escapeHtml(ci.pct)}</span>`);
 
@@ -201,7 +204,8 @@ function toggleMapMode() {
 
 // Renders the symbol/category/price/changes/target line in the editor header.
 function renderMeta(m) {
-  els.symbol.textContent = m.symbol || "";
+  els.symbol.innerHTML = escapeHtml(m.symbol || "") +
+    (hasMomentum(m) ? ' <span class="momentum-marker" title="Rising fast">●</span>' : "");
   els.category.textContent = m.category || "";
   els.price.textContent = priceLabel(m.price);
 
@@ -373,6 +377,7 @@ async function refreshQuotes() {
   try {
     const quotes = await invoke("fetch_quotes", { requests });
     let failed = 0;
+    const momHits = [];
     for (const q of quotes) {
       const m = markets.find((x) => x.id === q.id);
       if (!m) continue;
@@ -383,9 +388,13 @@ async function refreshQuotes() {
         changeDay: q.changeDay != null ? String(q.changeDay) : "",
         changeWeek: q.changeWeek != null ? String(q.changeWeek) : "",
         changeMonth: q.changeMonth != null ? String(q.changeMonth) : "",
+        change3d: q.change3d != null ? String(q.change3d) : "",
       };
       await fb.saveMarket(updated);
+      const reason = takeMomentumReason(q.id, q);
+      if (reason) momHits.push({ name: m.name, reason });
     }
+    sendMomentumNotification(momHits);
     els.refreshStatus.textContent =
       `· ${fmtTime(Date.now())}` + (failed ? ` (${failed} failed)` : "");
   } catch (err) {
@@ -417,6 +426,69 @@ async function checkTargetsAndNotify() {
     await invoke("notify", { title, body });
   } catch (e) {
     console.error("notify failed", e);
+  }
+}
+
+// ---------- Momentum alerts (fast risers) ----------
+// Alert when a market rises >= 3% in one trading day, or >= 6% over the last
+// 3 trading days. Deduped per day so a market above threshold doesn't re-alert
+// on every 30-minute refresh.
+const MOMENTUM_DAY_PCT = 3;
+const MOMENTUM_3D_PCT = 6;
+let momentumDay = "";
+const momentumSeen = new Set();
+
+// True when a market currently satisfies either momentum rule. Drives the green
+// pulsing dot; derived from live fields so it clears itself once prices update.
+function hasMomentum(m) {
+  const day = parseFloat(m.changeDay);
+  const d3 = parseFloat(m.change3d);
+  return (!isNaN(day) && day >= MOMENTUM_DAY_PCT) || (!isNaN(d3) && d3 >= MOMENTUM_3D_PCT);
+}
+
+// Returns a reason for any momentum rule that NEWLY fired today for this market
+// (marking it so it won't re-alert), or null. When a rule no longer holds its
+// mark is cleared, so a genuine fresh spike later the same day alerts again.
+function takeMomentumReason(id, q) {
+  const d = new Date();
+  const stamp = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  if (stamp !== momentumDay) { momentumDay = stamp; momentumSeen.clear(); }
+
+  const day = Number(q?.changeDay);
+  const d3 = Number(q?.change3d);
+  const parts = [];
+
+  if (Number.isFinite(day) && day >= MOMENTUM_DAY_PCT) {
+    if (!momentumSeen.has(`${id}:day`)) {
+      momentumSeen.add(`${id}:day`);
+      parts.push(`up ${day}% today`);
+    }
+  } else {
+    momentumSeen.delete(`${id}:day`); // re-arm once it drops back below threshold
+  }
+
+  if (Number.isFinite(d3) && d3 >= MOMENTUM_3D_PCT) {
+    if (!momentumSeen.has(`${id}:3d`)) {
+      momentumSeen.add(`${id}:3d`);
+      parts.push(`up ${d3}% over 3 trading days`);
+    }
+  } else {
+    momentumSeen.delete(`${id}:3d`);
+  }
+
+  return parts.length ? parts.join(" · ") : null;
+}
+
+async function sendMomentumNotification(hits) {
+  if (!hits.length) return;
+  const title = hits.length === 1
+    ? `${hits[0].name} is moving`
+    : `${hits.length} markets moving`;
+  const body = hits.map((h) => `${h.name}: ${h.reason}`).join("\n");
+  try {
+    await invoke("notify", { title, body });
+  } catch (e) {
+    console.error("momentum notify failed", e);
   }
 }
 

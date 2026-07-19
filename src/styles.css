@@ -177,6 +177,15 @@ body {
   animation: target-pulse 2s ease-in-out infinite;
 }
 @keyframes target-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* Green pulsing dot shown on the symbol when a market is rising fast. */
+.momentum-marker {
+  color: var(--up);
+  font-size: 9px;
+  line-height: 1;
+  filter: drop-shadow(0 0 4px rgba(70, 194, 106, 0.7));
+  animation: target-pulse 2s ease-in-out infinite;
+}
 .market-row:hover { background: rgba(255, 255, 255, 0.02); color: var(--text); }
 .market-row.active {
   background: var(--row-active);

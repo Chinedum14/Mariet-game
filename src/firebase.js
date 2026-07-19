@@ -61,7 +61,7 @@ async function uniqueId(base) {
 }
 
 const FIELDS = ["name", "symbol", "quote", "category", "target",
-  "price", "changeDay", "changeWeek", "changeMonth", "body"];
+  "price", "changeDay", "changeWeek", "changeMonth", "change3d", "body"];
 
 function clean(m) {
   const out = {};
