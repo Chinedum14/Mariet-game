@@ -76,7 +76,7 @@ async function uniqueId(base) {
   return id;
 }
 
-const FIELDS = ["name", "symbol", "quote", "category", "target",
+const FIELDS = ["name", "symbol", "quote", "category",
   "price", "changeDay", "changeWeek", "changeMonth", "change3d", "body"];
 
 function clean(m) {
@@ -85,9 +85,9 @@ function clean(m) {
   return out;
 }
 
-export async function createMarket({ name, symbol = "", quote = "", category = "", target = "" }) {
+export async function createMarket({ name, symbol = "", quote = "", category = "" }) {
   const id = await uniqueId(slugify(name));
-  const data = { ...clean({ name, symbol, quote, category, target }), updatedAt: serverTimestamp() };
+  const data = { ...clean({ name, symbol, quote, category }), updatedAt: serverTimestamp() };
   await setDoc(doc(db, COL, id), data);
   return { id, ...data, modifiedMs: Date.now() };
 }

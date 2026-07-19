@@ -28,7 +28,6 @@ const els = {
   category: $("m-category"),
   price: $("m-price"),
   changes: $("m-changes"),
-  target: $("m-target"),
   saved: $("m-saved"),
   notes: $("notes"),
   mapPanel: $("map-panel"),
@@ -42,7 +41,6 @@ const els = {
   fSymbol: $("f-symbol"),
   fQuote: $("f-quote"),
   fCategory: $("f-category"),
-  fTarget: $("f-target"),
   catSuggestions: $("category-suggestions"),
   refreshBtn: $("refresh-btn"),
   refreshStatus: $("refresh-status"),
@@ -70,13 +68,6 @@ function priceLabel(raw) {
   if (!raw) return "";
   const p = String(raw).replace(/^\$/, "").trim();
   return p ? "$" + p : "";
-}
-
-// True when the market has a numeric target and its live price is above it.
-function aboveTarget(m) {
-  const price = parseFloat(m.price);
-  const target = parseFloat(m.target);
-  return !isNaN(price) && !isNaN(target) && m.target !== "" && price > target;
 }
 
 function fmtDate(ms) {
@@ -124,16 +115,9 @@ function renderSidebar() {
       ticker.push(`<span class="${ci.cls}">${ci.arrow}</span>`);
       if (ci.pct) ticker.push(`<span class="${ci.cls}">${escapeHtml(ci.pct)}</span>`);
 
-      // Status dots, pinned to the far right of the row for easy scanning.
-      const markers = [];
-      if (aboveTarget(m)) {
-        markers.push(`<span class="target-marker" title="Above target ${escapeHtml(m.target)}">●</span>`);
-      }
-      if (hasMomentum(m)) {
-        markers.push(`<span class="momentum-marker" title="Rising fast — up 3%+ today or 6%+ over 3 trading days">●</span>`);
-      }
-      const markerBox = markers.length
-        ? `<span class="row-markers">${markers.join("")}</span>`
+      // Momentum dot, pinned to the far right of the row for easy scanning.
+      const markerBox = hasMomentum(m)
+        ? `<span class="row-markers"><span class="momentum-marker" title="Rising fast — up 3%+ today or 6%+ over 3 trading days">●</span></span>`
         : "";
       row.innerHTML =
         markerBox +
@@ -207,7 +191,7 @@ function toggleMapMode() {
   setMapMode(!mapOpen);
 }
 
-// Renders the symbol/category/price/changes/target line in the editor header.
+// Renders the symbol/category/price/changes line in the editor header.
 function renderMeta(m) {
   els.symbol.textContent = m.symbol || "";
   els.category.textContent = m.category || "";
@@ -225,15 +209,6 @@ function renderMeta(m) {
       return `<span class="chg ${ci.cls}"><span class="chg-label">${label}</span> ${ci.arrow} ${escapeHtml(ci.pct)}</span>`;
     })
     .join("");
-
-  if (m.target) {
-    const hit = aboveTarget(m);
-    els.target.textContent = `${hit ? "● " : "⌖ "}target ${m.target}`;
-    els.target.className = "mono meta-target" + (hit ? " hit" : "");
-  } else {
-    els.target.textContent = "";
-    els.target.className = "mono meta-target";
-  }
 }
 
 function updateCounts() {
@@ -273,7 +248,6 @@ function openModal(mode, market) {
   els.fSymbol.value = market?.symbol || "";
   els.fQuote.value = market?.quote || "";
   els.fCategory.value = market?.category || "";
-  els.fTarget.value = market?.target || "";
   els.backdrop.classList.remove("hidden");
   els.fName.focus();
 }
@@ -294,7 +268,6 @@ async function handleSubmit(e) {
     symbol: els.fSymbol.value.trim(),
     quote: els.fQuote.value.trim(),
     category: els.fCategory.value.trim(),
-    target: els.fTarget.value.trim().replace(/^\$/, ""),
   };
 
   try {
@@ -414,25 +387,6 @@ function fmtTime(ms) {
   return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-// ---------- Target-price alerts ----------
-async function checkTargetsAndNotify() {
-  const hits = markets.filter(aboveTarget);
-  if (!hits.length) return;
-
-  const title = hits.length === 1
-    ? `${hits[0].name} is above target`
-    : `${hits.length} markets above target`;
-  const body = hits
-    .map((m) => `${m.name}: ${priceLabel(m.price)} (target ${m.target})`)
-    .join("\n");
-
-  try {
-    await invoke("notify", { title, body });
-  } catch (e) {
-    console.error("notify failed", e);
-  }
-}
-
 // ---------- Momentum alerts (fast risers) ----------
 // Alert when a market rises >= 3% in one trading day, or >= 6% over the last
 // 3 trading days. Deduped per day so a market above threshold doesn't re-alert
@@ -533,8 +487,7 @@ function onMarketsSnapshot(list) {
     if (markets.length) {
       const latest = [...markets].sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0))[0];
       selectMarket(latest.id);
-      refreshQuotes();       // pull live prices on launch
-      checkTargetsAndNotify();
+      refreshQuotes();       // pull live prices on launch (also fires momentum alerts)
     } else {
       showEmpty();
     }
@@ -592,8 +545,7 @@ async function startApp() {
 
   unsub = fb.subscribeMarkets(onMarketsSnapshot);
 
-  setInterval(refreshQuotes, 30 * 60 * 1000);          // live prices every 30 min
-  setInterval(checkTargetsAndNotify, 4 * 60 * 60 * 1000); // target alerts every 4 h
+  setInterval(refreshQuotes, 30 * 60 * 1000); // live prices every 30 min (also fires momentum alerts)
 }
 
 function wireLogin() {
