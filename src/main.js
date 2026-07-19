@@ -121,17 +121,22 @@ function renderSidebar() {
 
       const ticker = [];
       if (m.symbol) ticker.push(`<span>${escapeHtml(m.symbol)}</span>`);
-      if (hasMomentum(m)) {
-        ticker.push(`<span class="momentum-marker" title="Rising fast">●</span>`);
-      }
       ticker.push(`<span class="${ci.cls}">${ci.arrow}</span>`);
       if (ci.pct) ticker.push(`<span class="${ci.cls}">${escapeHtml(ci.pct)}</span>`);
 
-      const marker = aboveTarget(m)
-        ? `<span class="target-marker" title="Above target ${escapeHtml(m.target)}">●</span>`
+      // Status dots, pinned to the far right of the row for easy scanning.
+      const markers = [];
+      if (aboveTarget(m)) {
+        markers.push(`<span class="target-marker" title="Above target ${escapeHtml(m.target)}">●</span>`);
+      }
+      if (hasMomentum(m)) {
+        markers.push(`<span class="momentum-marker" title="Rising fast — up 3%+ today or 6%+ over 3 trading days">●</span>`);
+      }
+      const markerBox = markers.length
+        ? `<span class="row-markers">${markers.join("")}</span>`
         : "";
       row.innerHTML =
-        marker +
+        markerBox +
         `<div class="row-name">${escapeHtml(m.name)}</div>` +
         `<div class="row-ticker">${ticker.join("")}</div>`;
       group.appendChild(row);
@@ -204,8 +209,7 @@ function toggleMapMode() {
 
 // Renders the symbol/category/price/changes/target line in the editor header.
 function renderMeta(m) {
-  els.symbol.innerHTML = escapeHtml(m.symbol || "") +
-    (hasMomentum(m) ? ' <span class="momentum-marker" title="Rising fast">●</span>' : "");
+  els.symbol.textContent = m.symbol || "";
   els.category.textContent = m.category || "";
   els.price.textContent = priceLabel(m.price);
 
